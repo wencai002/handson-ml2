@@ -4,6 +4,7 @@ import urllib
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
+import joblib
 
 Download_Root = "https://raw.githubusercontent.com/ageron/handson-ml2/master"
 Folder_Path = os.path.join("datasets","housing")
@@ -26,7 +27,9 @@ housing = pd.read_csv(housing_path)
 import matplotlib.pyplot as plt
 # housing.hist(bins=50, figsize=(16,10))
 # plt.show()
-
+###########################################
+# split between train and test, dont touch test after
+###########################################
 train_set, test_set = train_test_split(housing, test_size=0.2, random_state=42)
 
 housing["income_cat"] = pd.cut(housing["median_income"],
@@ -63,20 +66,27 @@ from pandas.plotting import scatter_matrix
 # housing["rooms_per_household"] = housing["total_rooms"]/housing["households"]
 # housing["bedrooms_per_room"] = housing["total_bedrooms"]/housing["total_rooms"]
 # housing["popuation_per_household"] = housing["population"]/housing["households"]
-
+#############################################################
+# separat between X and y
+#############################################################
 housing = strat_train_set.drop("median_house_value", axis=1)
 housing_labels = strat_train_set["median_house_value"].copy()
 
 from sklearn.impute import SimpleImputer
-imputer = SimpleImputer(strategy="median")
+# imputer = SimpleImputer(strategy="median")
 housing_num = housing.drop("ocean_proximity", axis=1)
-X = imputer.fit_transform(housing_num)
-housing_tr = pd.DataFrame(X, columns=housing_num.columns, index=housing_num.index)
-
+# X = imputer.fit_transform(housing_num)
+# housing_tr = pd.DataFrame(X, columns=housing_num.columns, index=housing_num.index)
+#
+#################################################################
+# preprocessing
+# Pipeline
+# ColumnTransformer
+#################################################################
 from sklearn.preprocessing import OneHotEncoder
-housing_cat = housing[["ocean_proximity"]]
-cat_encoder = OneHotEncoder()
-housing_cat_1hot = cat_encoder.fit_transform(housing_cat)
+# housing_cat = housing[["ocean_proximity"]]
+# cat_encoder = OneHotEncoder()
+# housing_cat_1hot = cat_encoder.fit_transform(housing_cat)
 #print(cat_encoder.categories_)
 
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -99,4 +109,78 @@ class CombinedAttributesAdder(BaseEstimator, TransformerMixin):
 
 attr_adder = CombinedAttributesAdder(add_bedrooms_per_room=False)
 housing_extra_attribs = attr_adder.transform(housing.values)
-print(housing_extra_attribs[:5])
+
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+num_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("attribs_adder", CombinedAttributesAdder()),
+    ("std_scaler", StandardScaler())
+])
+
+housing_num_tr = num_pipeline.fit_transform(housing_num)
+
+from sklearn.compose import ColumnTransformer
+
+num_attribs = list(housing_num)
+cat_attribs = ["ocean_proximity"]
+
+full_pipeline = ColumnTransformer([
+    ("num", num_pipeline, num_attribs),
+    ("cat", OneHotEncoder(), cat_attribs),
+])
+
+housing_prepared = full_pipeline.fit_transform(housing)
+####################################################################
+# start training
+####################################################################
+from sklearn.linear_model import LinearRegression
+
+lin_reg = LinearRegression()
+lin_reg.fit(housing_prepared, housing_labels)
+#print(lin_reg.score(housing_prepared, housing_labels))
+
+from sklearn.metrics import mean_squared_error
+housing_predictions = lin_reg.predict(housing_prepared)
+lin_mse = mean_squared_error(housing_labels, housing_predictions)
+joblib.dump(lin_reg, "modelC2/lin_reg.pkl")
+#print(np.sqrt(lin_mse))
+
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
+
+tree_reg = DecisionTreeRegressor()
+tree_reg.fit(housing_prepared, housing_labels)
+housing_predictions_tree = tree_reg.predict(housing_prepared)
+tree_mse = mean_squared_error(housing_labels, housing_predictions_tree)
+joblib.dump(tree_reg, "modelC2/tree_reg.pkl")
+#print(np.sqrt(tree_mse))
+
+from sklearn.model_selection import cross_val_score
+scores = cross_val_score(tree_reg, housing_prepared, housing_labels, scoring="neg_mean_squared_error", cv=10)
+scores_lin = cross_val_score(lin_reg, housing_prepared, housing_labels, scoring="neg_mean_squared_error", cv=10)
+tree_rmse_scores = np.sqrt(-scores)
+lin_remse_scores = np.sqrt(-scores_lin)
+
+#print(tree_rmse_scores.mean())
+#print(tree_rmse_scores.std())
+
+###################################################
+# hyperparameter fine-tuning
+###################################################
+
+from sklearn.model_selection import GridSearchCV
+
+param_grid = [
+    {"n_estimators": [3,10,30], "max_features": [2,4,6,8]},
+    {"bootstrap":[False], "n_estimators": [3,10], "max_features": [2,3,4]}
+]
+
+forest_reg = RandomForestRegressor()
+grid_search = GridSearchCV(forest_reg, param_grid, cv=5, scoring="neg_mean_squared_error", return_train_score=True)
+grid_search.fit(housing_prepared, housing_labels)
+
+cvres = grid_search.cv_results_
+for mean_score, params in zip(cvres["mean_test_score"], cvres["params"]):
+    print(np.sqrt(-mean_score), params)
