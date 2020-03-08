@@ -35,8 +35,8 @@ model_A.compile(loss="sparse_categorical_crossentropy",
                 optimizer=keras.optimizers.SGD(lr=1e-3),
                 metrics=["accuracy"])
 
-history = model_A.fit(X_train_A, y_train_A, epochs=20, validation_data=(X_valid_A, y_valid_B))
-
+history = model_A.fit(X_train_A, y_train_A, epochs=20, validation_data=(X_valid_A, y_valid_A))
+model_A.save("modelC2/my_model_A.h5")
 # model = keras.models.Sequential([
 #     keras.layers.Flatten(input_shape=[28,28]),
 #     keras.layers.BatchNormalization(),
