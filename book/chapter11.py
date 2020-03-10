@@ -21,22 +21,53 @@ def split_dataset(X, y):
 X_train_B = X_train_B[:200]
 y_train_B = y_train_B[:200]
 
-model_A = keras.models.Sequential([
-    keras.layers.Flatten(input_shape=[28,28]),
-    keras.layers.Dense(300, activation="selu"),
-    keras.layers.Dense(100, activation="selu"),
-    keras.layers.Dense(50, activation="selu"),
-    keras.layers.Dense(50, activation="selu"),
-    keras.layers.Dense(50, activation="selu"),
-    keras.layers.Dense(8, activation="softmax")
-])
+# model_A = keras.models.Sequential([
+#     keras.layers.Flatten(input_shape=[28,28]),
+#     keras.layers.Dense(300, activation="selu"),
+#     keras.layers.Dense(100, activation="selu"),
+#     keras.layers.Dense(50, activation="selu"),
+#     keras.layers.Dense(50, activation="selu"),
+#     keras.layers.Dense(50, activation="selu"),
+#     keras.layers.Dense(8, activation="softmax")
+# ])
+#
+# model_A.compile(loss="sparse_categorical_crossentropy",
+#                 optimizer=keras.optimizers.SGD(lr=1e-3),
+#                 metrics=["accuracy"])
+#
+# history = model_A.fit(X_train_A, y_train_A, epochs=20, validation_data=(X_valid_A, y_valid_A))
+# model_A.save("modelC11/my_model_A.h5")
 
-model_A.compile(loss="sparse_categorical_crossentropy",
-                optimizer=keras.optimizers.SGD(lr=1e-3),
-                metrics=["accuracy"])
+model_A = keras.models.load_model("modelC11/my_model_A.h5")
+model_A_clone = keras.models.clone_model(model_A)
+model_A_clone.set_weights(model_A.get_weights())
+model_B_on_A = keras.models.Sequential(model_A_clone.layers[:-1])
+model_B_on_A.add(keras.layers.Dense(1, activation="sigmoid", name="dense_output_B"))
 
-history = model_A.fit(X_train_A, y_train_A, epochs=20, validation_data=(X_valid_A, y_valid_A))
-model_A.save("modelC2/my_model_A.h5")
+for layer in model_B_on_A.layers[:-1]:
+    layer.trainable = False
+
+model_B_on_A.compile(loss="binary_crossentropy",
+                     optimizer="sgd",
+                     metrics=["accuracy"])
+
+history = model_B_on_A.fit(X_train_B, y_train_B, epochs=4, validation_data=(X_valid_B, y_valid_B))
+for layer in model_B_on_A.layers[:-1]:
+    layer.trainable = True
+
+optimizer = keras.optimizers.SGD(lr=1e-4)
+model_B_on_A.compile(loss="binary_crossentropy",optimizer=optimizer,metrics=["accuracy"])
+model_B_on_A.fit(X_train_B, y_train_B, epochs=20, validation_data=(X_valid_B, y_valid_B))
+print(model_B_on_A.evaluate(X_test_B, y_test_B))
+
+
+
+
+
+
+
+
+
 # model = keras.models.Sequential([
 #     keras.layers.Flatten(input_shape=[28,28]),
 #     keras.layers.BatchNormalization(),
