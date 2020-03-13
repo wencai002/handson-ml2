@@ -17,10 +17,15 @@ def exponential_decay_fn(epoch):
     return 0.01*0.1**(epoch/20)
 model = keras.models.Sequential([
     keras.layers.Flatten(input_shape=[28,28]),
+    keras.layers.Dropout(rate=0.2),
     keras.layers.BatchNormalization(),
-    keras.layers.Dense(300, activation="elu", kernel_initializer="he_normal"),
+    keras.layers.Dense(300, activation="elu", kernel_initializer="he_normal",
+                       kernel_regularizer=keras.regularizers.l2(0.01)),
+    keras.layers.Dropout(rate=0.2),
     keras.layers.BatchNormalization(),
-    keras.layers.Dense(100, activation="elu", kernel_initializer="he_normal"),
+    keras.layers.Dense(100, activation="elu", kernel_initializer="he_normal",
+                       kernel_regularizer=keras.regularizers.l2(0.01)),
+    keras.layers.Dropout(rate=0.2),
     keras.layers.BatchNormalization(),
     keras.layers.Dense(10, activation="softmax")
 ])
@@ -30,7 +35,11 @@ history = model.fit(X_train_scaled, y_train,
                     epochs=25,
                     validation_data=(X_valid_scaled, y_valid),
                     callbacks=[lr_scheduler])
-
+model.save("modelC11/modelC11.h5")
+model = keras.models.load_model("modelC11/modelC11.h5")
+y_probas = np.stack([model(X_test_scaled, training=True) for sample in range(100)])
+y_proba = y_probas.mean(axis=0)
+np.round(y_proba[:1],5)
 # def split_dataset(X, y):
 #     y_5_or_6 = (y == 5) | (y == 6) # sandals or shirts
 #     y_A = y[~y_5_or_6]
