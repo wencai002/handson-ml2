@@ -89,7 +89,7 @@ class MyDense(keras.layers.layer):
             initializer = "glorot_normal")
         self.bias = self.add_weight(
             name="bias", shape=[self.units], initializer="zeros")
-        super().build(bacth_input_shape)
+        super().build(batch_input_shape)
 
     def call(self, X):
         return self.activation(X @ self.kernel + self.bias)
@@ -99,3 +99,87 @@ class MyDense(keras.layers.layer):
     def get_config(self):
         base_config = super().get_config()
         return {**base_config, "units": self.units, "activation": keras.activations.serialize(self.activation)}
+
+class MyMultiLayer(tf.keras.layers.Layer):
+    def call(self, X):
+        X1, X2 = X
+        return [X1+X2, X1*X2, X1/X2]   # outputs of 3
+    def compute_output_shape(self, batch_input_shape):
+        b1, b2 = batch_input_shape
+        return [b1, b1, b1]  # shape of these 3 outputs
+
+class MyGaussianNoise(keras.layers.Layer): # which does exactly the same as tf.keras.layers.GaussianNoise
+    def __init__(self, stddev, **kwargs):
+        super().__init__(**kwargs)
+        self.stddev = stddev
+    def call(self, X, training=None):
+        if training:
+            noise = tf.random.normal(tf.shape(X), steddev=self.stddev)
+            return X + noise
+        else:
+            return X
+    def compute_output_shape(self, batch_input_shape):
+        return batch_input_shape
+
+
+class ResidualBlock(tf.keras.layers.Layer):
+    def __init__(self, n_layers, n_neurons, **kwargs):
+        super().__init__(**kwargs)
+        self.hidden = [tf.keras.layers.Dense(n_neurons, activation="elu", kernel_initializer="he_normal")
+                       for _ in range(n_layers)]
+        def call(self, inputs):
+            Z = inputs
+            for layer in self.hidden:
+                Z = layer(Z)
+            return inputs + Z
+
+class ResidualRegressor(keras.Model):
+    def __init__(self, output_dim, **kwargs):
+        super().__init__(**kwargs)
+        self.hidden1 = keras.layers.Dense(30, activation="elu", kernel_initializer="he_normal")
+        self.block1 = ResidualBlock(2,30)
+        self.block2 = ResidualBlock(2,30)
+        self.out = tf.keras.layers.Dense(output_dim)
+
+    def call(self, inputs):
+        Z = self.hidden1(inputs)
+        for _ in range(1+3):
+            Z = self.block1(Z)
+        Z = self.block2(Z)
+        return self.out(Z)
+
+class ReconstructingRegressor(keras.Model):
+    def __init__(self, output_dim, **kwargs):
+        super().__init__(kwargs)
+        self.hidden = [tf.keras.layers.Dense(30, activation="selu", kernel_initializer="lecun_normal")
+                       for _ in range(5)]
+        self.out = tf.keras.layers.Dense(output_dim)
+
+    def build(self, batch_input_shape):
+        n_inputs = batch_input_shape[-1]
+        self.reconstruct = tf.keras.layers.Dense(n_inputs)
+        super().build(batch_input_shape)
+
+    def call(self, inputs):
+        Z = inputs
+        for layer in self.hidden:
+            Z = layer(Z)
+        reconstruction = self.reconstruct(Z)
+        recon_loss = tf.reduce_mean(tf.square(reconstruction - inputs))
+        self.add_loss(0.05*recon_loss)
+        return self.out(Z)
+
+#######################################################################
+### computing gradients using autodiff
+#######################################################################
+def f(w1,w2):
+    return 3*w1**2 + 2*w1*w2
+
+w1, w2 = tf.Variable(5.), tf.Variable(3.)
+with tf.GradientTape(persistent=True) as tape:
+    z = f(w1,w2)
+
+dz_dw1 = tape.gradient(z, w1)
+dz_dw2 = tape.gradient(z, w2)
+print(dz_dw1)
+print(dz_dw2)
